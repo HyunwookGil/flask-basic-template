@@ -1,3 +1,6 @@
+from flask_sqlalchemy import SQLAlchemy
+from flask_mongoengine import MongoEngine
+
 import pymysql
 import pymongo
 import importlib
@@ -5,7 +8,11 @@ cx_Oracle = importlib.import_module('cx_Oracle')
 
 from flask import g
 
+# ORM Object #
+sql = SQLAlchemy()
+mongo = MongoEngine()
 
+# Row Query Object #
 def get_mysql():
     if 'mysql' not in g:
         g.mysql = pymysql.connect(

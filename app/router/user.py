@@ -2,7 +2,10 @@ from flask import Blueprint
 from flask import request
 from flask_jwt_extended import *
 
-from app.db import get_oracle, get_mysql, get_mongo
+from model.user import User
+from model.product import Product
+from model.order import Order
+from model.vendor import Vendor
 
 
 bp = Blueprint("user", __name__, url_prefix="/user")
@@ -11,45 +14,34 @@ bp = Blueprint("user", __name__, url_prefix="/user")
 @bp.route("/vendor_total", methods=["GET"])
 @jwt_required()
 def get_user_vendor_total():
-    oracle = get_oracle()
-    oracle_cursor = oracle.cursor()
-    mysql = get_mysql()
-    mysql_cursor = mysql.cursor()
-    mongo = get_mongo()
-    coll = mongo["Order"]["order"]
-
     parameter_dict = request.args.to_dict()
     user_seq = parameter_dict["seq"]
 
     # Find user id
-    mysql_query = f"select id from User where seq={user_seq}"
-    mysql_cursor.execute(mysql_query)
-    user_id = mysql_cursor.fetchone()[0]
+    query_filter = {"seq": user_seq}
+    user = User.query.filter_by(**query_filter).first()
+    user_id = user.id
 
     # Set Vendors
     vendors = dict()
     totals = dict()
-    oracle_query = f"select * from vendor"
-    rows = oracle_cursor.execute(oracle_query)
-    for row in rows:
-        seq, vendor = row
-        vendors[seq] = vendor
-        totals[seq] = 0
+    vds = Vendor.query.all()
+    for vd in vds:
+        vendors[vd.seq] = vd.name
+        totals[vd.seq] = 0
 
     # Set Products
-    prds = dict()
-    oracle_query = f"select seq, vendor from product"
-    rows = oracle_cursor.execute(oracle_query)
-    for row in rows:
-        seq, vendor = row
-        prds[seq] = vendor
+    products = dict()
+    pdts = Product.query.all()
+    for pdt in pdts:
+        products[pdt.seq] = pdt.vendor
 
     # make tally by production_id
-    mongo_filter = {'buyer_id': int(user_seq)}
-    docs = coll.find(mongo_filter)
-    for doc in docs:
-        for prd_order in doc["product_orders"]:
-            totals[prds[prd_order["product_id"]]] += prd_order["price"]
+    query_filter = {'buyer_id': int(user_seq)}
+    orders = Order.objects(**query_filter)
+    for order in orders:
+        for prd_order in order.product_orders:
+            totals[products[prd_order.product_id]] += prd_order.price
 
     vendors_total = dict()
     for key, value in vendors.items():

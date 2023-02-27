@@ -1,30 +1,25 @@
-from pydantic import BaseModel
-from typing import List
-
-import json
+from app.db import mongo
 from datetime import date, datetime
 
-class ProductOrder(BaseModel):
-    product_id: int
-    price: int
+class ProductOrder(mongo.DynamicEmbeddedDocument):
+    product_id = mongo.IntField()
+    price = mongo.IntField()
 
 
-class Order(BaseModel):
-    buyer_id: int
-    order_id: str
-    order_date: str
-    product_orders: List[ProductOrder]
-    total_price: int
-    total_quantity: int
+class Order(mongo.Document):
+    buyer_id = mongo.IntField()
+    order_id = mongo.StringField()
+    order_date = mongo.StringField()
+    product_orders = mongo.EmbeddedDocumentListField(ProductOrder)
+    total_price = mongo.IntField()
+    total_quantity = mongo.IntField()
 
-    def to_json(self):
-        return json.dumps(self, default=lambda o: o.__dict__,
-                          sort_keys=False, indent=4)
 
     def issue_order_id(self):
         today = str(date.today().isoformat()).replace('-', '')
         now = str(datetime.now().strftime("%H%M%S"))
 
+        self.order_date = str(date.today().isoformat())
         self.order_id = today + now
 
     def re_tally(self):

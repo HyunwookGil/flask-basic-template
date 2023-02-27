@@ -2,12 +2,9 @@ from app.db import sql
 from .converter import json_converter
 
 
-class Product(sql.Model):
+class Vendor(sql.Model):
     seq = sql.Column(sql.Integer, primary_key=True)
     name = sql.Column(sql.String(100), nullable=False)
-    price = sql.Column(sql.Integer, primary_key=True)
-    category = sql.Column(sql.Integer, primary_key=True)
-    vendor = sql.Column(sql.Integer, primary_key=True)
 
     @property
     def json(self):

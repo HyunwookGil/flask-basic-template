@@ -2,71 +2,47 @@ from flask import Blueprint
 from flask import request
 from flask import jsonify, abort
 from flask_jwt_extended import *
+from app.jwt_middleware import is_admin
 
 import json
+from sqlalchemy import func
 
-from app.jwt_middleware import is_admin
-from model import product
-from app.db import get_oracle
-
+from model.product import Product
+from app.db import sql
 
 bp = Blueprint("product", __name__, url_prefix="/product")
 
+json_converter = lambda x: json.loads(x.json)
 def table_converter(rows):
-    pdts = []
-    for row in rows:
-        pdt = product.Product(row)
-        pdts.append(json.loads(pdt.to_json()))
-
-    return pdts
+     pdts = [json_converter(x) for x in rows]
+     return pdts
 
 
 @bp.route("/", methods=["GET"])
 @jwt_required()
 def get_product():
-    db = get_oracle()
-    cursor = db.cursor()
-
     parameter_dict = request.args.to_dict()
 
     key = parameter_dict['opt']
     value = parameter_dict['value']
+    query_filter = {key: value}
 
-    query = f"select * from product where {key} = \'{value}\'"
-    try:
-        rows = cursor.execute(query)
-    except Exception as e:
-        error = e
-        return jsonify(
-            success=False,
-            error=error
-        )
-
-    return table_converter(rows)
+    pdts = Product.query.filter_by(**query_filter).all()
+    return table_converter(pdts)
 
 
 @bp.route("/used", methods=["GET"])
 @jwt_required()
 def get_product_used():
-    db = get_oracle()
-    cursor = db.cursor()
-
-    query = f"select * from product where name like \'%USED\'"
-    rows = cursor.execute(query)
-
-    return table_converter(rows)
+    pdts = Product.query.filter(Product.name.like("%USED")).all()
+    return table_converter(pdts)
 
 
 @bp.route("/all", methods=["GET"])
 @jwt_required()
 def get_all_product():
-    db = get_oracle()
-    cursor = db.cursor()
-    query = "select * from product"
-
-    rows = cursor.execute(query)
-
-    return table_converter(rows)
+    pdts = Product.query.all()
+    return table_converter(pdts)
 
 
 @bp.route("/totals_by", methods=["GET"])
@@ -75,19 +51,30 @@ def get_product_group_count():
     if not is_admin():
         return abort(403, description="You are not admin")
 
-    db = get_oracle()
-    cursor = db.cursor()
-
     parameter_dict = request.args.to_dict()
-    col = parameter_dict['col']
+    column = parameter_dict['col']
 
-    query = f"select {col}, count(*) from product group by {col}"
-    rows = cursor.execute(query)
+    pdts = None
+    if column == "vendor":
+        pdts = sql.session.query(
+            Product.vendor,
+            func.count("*").
+            label("total_counts")).\
+            group_by(Product.vendor).\
+            all()
+    elif column == "category":
+        pdts = sql.session.query(
+            Product.category,
+            func.count("*").
+            label("total_counts")). \
+            group_by(Product.category). \
+            all()
 
     ret = []
-    for row in rows:
-        res = {"vendor": row[0], "count": row[1]}
+    for row in pdts:
+        res = {column: row[0], "count": row[1]}
         ret.append(res)
+
     return ret
 
 
@@ -96,27 +83,18 @@ def get_product_group_count():
 def update_product():
     if not is_admin():
         return abort(403, description="You are not admin")
-
-    db = get_oracle()
-    cursor = db.cursor()
-
     parameter_dict = request.args.to_dict()
+
     key = parameter_dict['opt']
     value = parameter_dict['value']
 
-    params = request.get_json()
-    new_pdt = product.Product(params.values())
-
-    query = f"update product " \
-            f"set " \
-            f"name=\'{new_pdt.name}\', " \
-            f"price=\'{new_pdt.price}\', " \
-            f"category=\'{new_pdt.category}\', " \
-            f"vendor=\'{new_pdt.category}\' " \
-            f"where {key} = \'{value}\'"
+    req_json = request.get_json()
 
     try:
-        cursor.execute(query)
+        if key == "seq":
+            sql.session.query(Product).filter(Product.seq == value).update(req_json)
+        elif key == "name":
+            sql.session.query(Product).filter(Product.name == value).update(req_json)
     except Exception as e:
         error = e
         return jsonify(
@@ -124,7 +102,7 @@ def update_product():
             error=error
         )
     else:
-        db.commit()
+        sql.session.commit()
         return jsonify(
             success=True
         )
@@ -136,16 +114,17 @@ def delete_product():
     if not is_admin():
         return abort(403, description="You are not admin")
 
-    db = get_oracle()
-    cursor = db.cursor()
-
     parameter_dict = request.args.to_dict()
+
     key = parameter_dict['opt']
     value = parameter_dict['value']
 
-    query = f"delete from product where {key} = \'{value}\'"
+    del_pdt: Product | None = None
     try:
-        cursor.execute(query)
+        if key == "seq":
+            del_pdt = sql.session.query(Product).filter(Product.seq == value).first()
+        elif key == "name":
+            del_pdt = sql.session.query(Product).filter(Product.name == value).first()
     except Exception as e:
         error = e
         return jsonify(
@@ -153,7 +132,8 @@ def delete_product():
             error=error
         )
     else:
-        db.commit()
+        sql.session.delete(del_pdt)
+        sql.session.commit()
         return jsonify(
             success=True
         )
