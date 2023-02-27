@@ -1,0 +1,12 @@
+venv/
+.idea/
+# Byte - compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+playground.py
+
+*.pyc
+
+.DS_Store
